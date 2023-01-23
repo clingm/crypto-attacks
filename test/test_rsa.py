@@ -1,5 +1,6 @@
 import os
 import sys
+from hashlib import sha256
 from math import lcm
 from random import getrandbits
 from random import randrange
@@ -19,6 +20,8 @@ from attacks.rsa import boneh_durfee
 from attacks.rsa import cherkaoui_semmouni
 from attacks.rsa import common_modulus
 from attacks.rsa import crt_fault_attack
+from attacks.rsa import d_fault_attack
+from attacks.rsa import desmedt_odlyzko
 from attacks.rsa import extended_wiener_attack
 from attacks.rsa import hastad_attack
 from attacks.rsa import known_crt_exponents
@@ -146,10 +149,59 @@ class TestRSA(TestCase):
         phi = (p - 1) * (q - 1)
         e = 65537
         d = pow(e, -1, phi)
-        p_, q_ = crt_fault_attack.attack(n, e, lambda m: self._crt_faulty_sign(m, p, q, d))
+        p_, q_ = crt_fault_attack.attack_known_m(n, e, 2, self._crt_faulty_sign(2, p, q, d))
         self.assertIsInstance(p_, int)
         self.assertIsInstance(q_, int)
         self.assertEqual(n, p_ * q_)
+
+        p_, q_ = crt_fault_attack.attack_unknown_m(n, e, pow(2, d, n), self._crt_faulty_sign(2, p, q, d))
+        self.assertIsInstance(p_, int)
+        self.assertIsInstance(q_, int)
+        self.assertEqual(n, p_ * q_)
+
+    def test_d_fault_attack(self):
+        p = 11711858679422576139240623353912034730578750025305511997160442356437636294934848077337818067479185593605531008093226275733420002636468432350557846723886129
+        q = 11362676749997147110865246846859793005675832462810186294516539616676027025614775954113496330880795201537135407817378604172135795945348591541580522484363839
+        n = p * q
+        phi = (p - 1) * (q - 1)
+        e = 65537
+        d = pow(e, -1, phi)
+        sv = pow(2, d, n)
+        sf = []
+        for i in range(d.bit_length()):
+            sf.append(pow(2, d ^ (2 ** i), n))
+        d_ = d_fault_attack.attack(n, e, sv, sf)
+        self.assertIsInstance(d_, PartialInteger)
+        lsb, lsb_bit_length = d_.get_known_lsb()
+        self.assertIsInstance(lsb, int)
+        self.assertIsInstance(lsb_bit_length, int)
+        self.assertEqual(d, lsb)
+        self.assertEqual(d.bit_length(), lsb_bit_length)
+
+        sf = []
+        for i in range(384):
+            sf.append(pow(2, d ^ (2 ** i), n))
+        d_ = d_fault_attack.attack(n, e, sv, sf)
+        self.assertIsInstance(d_, PartialInteger)
+        lsb, lsb_bit_length = d_.get_known_lsb()
+        self.assertIsInstance(lsb, int)
+        self.assertIsInstance(lsb_bit_length, int)
+        self.assertEqual(d % (2 ** 384), lsb)
+        self.assertEqual(384, lsb_bit_length)
+
+    def test_desmedt_odlyzko(self):
+        p = 97164923933597891368559775050432519012034358306405340946100833095770328943676411310628656642026913097035188965406025957744495809556827045737345114790763524883526919749849156670762148425581036752109600896844274905771163440683527068529651911795698170268844514398131442858441702974028897564993245872764301596397
+        q = 109712022838692588796818474700409969126344450902860551087011803034678579584276407066098123240292070455715313066927016909739145402676756809804326474562269097078787526578676643824546284396305927118696509187348588587237261529370838503470176017203514480490343882354075192486431376267056466433423025173883070036753
+        e = 65537
+        N = p * q
+        phi = (p - 1) * (q - 1)
+        d = pow(e, -1, phi)
+        hash_oracle = lambda m: int.from_bytes(sha256(int.to_bytes(m, length=256, byteorder="big")).digest()[:6], byteorder="big")
+        sign_oracle = lambda m: pow(hash_oracle(m), d, N)
+        m = 226572932144966770252674249388577138444
+        s = desmedt_odlyzko.attack(hash_oracle, sign_oracle, N, e, m)
+        self.assertIsInstance(s, int)
+        self.assertEqual(sign_oracle(m), s)
 
     def test_extended_wiener_attack(self):
         p = 8962183829526343305205665485515731618546029297439020752534914809943234334520404067067844789415616008948709769282722944473756884384422045609586429488722819

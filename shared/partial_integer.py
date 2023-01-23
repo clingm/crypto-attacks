@@ -302,7 +302,8 @@ class PartialInteger:
                     value = 0
                 rc_u += 1
             else:
-                digit = int(digit, base)
+                if isinstance(digit, str):
+                    digit = int(digit, base)
                 assert 0 <= digit < base
                 if rc_u > 0:
                     p.add_unknown(rc_u * bits_per_element)
@@ -326,7 +327,7 @@ class PartialInteger:
         :param base: the base (must be a power of two and less than or equal to 36)
         :return: a PartialInteger with known and unknown components as indicated by the digits
         """
-        return PartialInteger.parse_be(reversed(digits), base)
+        return PartialInteger.parse_le(reversed(digits), base)
 
     @staticmethod
     def from_bits_le(bits):
